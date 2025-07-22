@@ -51,7 +51,7 @@ Any other compatible LLM provider
 
 ```bash
 # Create .env file in project root
-cp -r .env_sample .env
+cp -r .env.example .env
 ```
 
 Configure your .env file with the following variables:
@@ -134,10 +134,6 @@ registry:
           from: "MODEL_PROVIDER"
         - name: "MODEL_NAME"
           from: "MODEL_NAME"
-        - name: "MODEL_TEMPERATURE"
-          value: "0.1"
-        - name: "MODEL_TOKEN"
-          value: "8000"
 ```
 
 For Windows, create a powershell command (run_agent.ps1) and run:
@@ -169,7 +165,7 @@ You can view the agents running in Dev Mode using the [Coral Studio UI](https://
 
 ```bash
 # Input to the interface agent:
-Ask the Office PowerPoint MCP Agent to generate a PowerPoint presentation on the topic "Transformer Architecture". The agent should analyze the topic and create a clean, professional, and visually appealing deck that includes relevant tables, charts, and shapes. Ensure all text is properly contained within the slide boundaries for a neat and tidy appearance. Save the final presentation as "transformer_architecture" at the specified path.
+Ask the Office PowerPoint MCP Agent to generate a PowerPoint presentation on the topic "Transformer Architecture". The agent should analyze the topic and create a clean, professional, and visually appealing deck that includes relevant tables, charts, and shapes. Ensure all text is properly contained within the slide boundaries for a neat and tidy appearance. Save the final presentation as "transformer_architecture" at "enter your path".
 
 # Output:
 It will create the slides at the path you provided.
