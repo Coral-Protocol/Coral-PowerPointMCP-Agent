@@ -15,12 +15,16 @@ logger = logging.getLogger(__name__)
 logfire.configure()  
 logfire.instrument_pydantic_ai() 
 
-# Load environment variables
-load_dotenv(override=True)
-
 # Get environment variables for Coral
-base_url = os.getenv("CORAL_SSE_URL")
-agentID = os.getenv("CORAL_AGENT_ID")
+runtime = os.getenv("CORAL_ORCHESTRATION_RUNTIME", "devmode")
+
+if runtime == "docker" or runtime == "executable":
+    base_url = os.getenv("CORAL_SSE_URL")
+    agentID = os.getenv("CORAL_AGENT_ID")
+else:
+    load_dotenv(override=True)
+    base_url = os.getenv("CORAL_SSE_URL")
+    agentID = os.getenv("CORAL_AGENT_ID")
 
 # Debug environment variables
 logger.info(f"CORAL_SSE_URL: {base_url}")
