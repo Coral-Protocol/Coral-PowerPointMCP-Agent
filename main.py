@@ -7,7 +7,9 @@ import logging
 import traceback
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerSSE, MCPServerStdio
+from pydantic_ai import RunContext
 import logfire
+from docx import Document
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -47,20 +49,20 @@ async def get_mcp_tools(server):
             # Check if tools_result is a list; if so, use it directly
             tools = tools_result if isinstance(tools_result, list) else (tools_result.tools if hasattr(tools_result, 'tools') else [])
             logger.info(f"Retrieved tools: {tools}")
-            
+            #commented it out to avoid rate limit error
             # Format tools like get_tools_description
-            def serialize_schema(tool):
-                # Try different possible schema attributes
-                if hasattr(tool, 'inputSchema') and tool.inputSchema:
-                    return json.dumps(tool.inputSchema).replace('{', '{{').replace('}', '}}')
-                elif hasattr(tool, 'parameters_json_schema') and tool.parameters_json_schema:
-                    return json.dumps(tool.parameters_json_schema).replace('{', '{{').replace('}', '}}')
-                elif hasattr(tool, 'args') and tool.args:
-                    return json.dumps(tool.args).replace('{', '{{').replace('}', '}}')
-                return "{}"
+            # def serialize_schema(tool):
+            #     # Try different possible schema attributes
+            #     if hasattr(tool, 'inputSchema') and tool.inputSchema:
+            #         return json.dumps(tool.inputSchema).replace('{', '{{').replace('}', '}}')
+            #     elif hasattr(tool, 'parameters_json_schema') and tool.parameters_json_schema:
+            #         return json.dumps(tool.parameters_json_schema).replace('{', '{{').replace('}', '}}')
+            #     elif hasattr(tool, 'args') and tool.args:
+            #         return json.dumps(tool.args).replace('{', '{{').replace('}', '}}')
+            #     return "{}"
             
             formatted_tools = "\n".join(
-                f"Tool: {tool.name}, Schema: {serialize_schema(tool)}"
+                f"Tool: {tool.name}"
                 for tool in tools
             )
             return formatted_tools or "No tools available"
@@ -105,21 +107,39 @@ async def main():
 Follow these steps in order:
 1. Call wait_for_mentions from coral tools (timeoutMs: 30000) to receive mentions from other agents.
 2. When you receive a mention, keep the thread ID and the sender ID.
-3. Think about the content (instruction) of the message and analyze what type of presentation is requested.
-4. Use your PowerPoint tools to create comprehensive presentations with:
+3. Analyze the received message to understand what type of presentation is requested.
+4. Before creating the presentation, gather all necessary details through counter-questions:
+   - First, analyze if the request already contains all necessary details
+   - If more details are needed, use send_message to ask follow-up questions about:
+     * Number of slides needed (if not specified)
+     * Chart/visual requirements (if relevant) - types like bar charts, pie charts, etc.
+     * Table requirements (if relevant)
+     * Image requirements and their paths/sources (if images are needed)
+     * Theme preferences (professional_gradient, gradient or solid)
+     * Color scheme preferences (Modern Blue, Corporate Gray, Elegant Green, Warm Red)
+     * Transition effects between slides (fade, slide, zoom, etc.)
+     * Any reference PowerPoint file to use as a template
+     * Any Word document to convert to PowerPoint
+     * also the path where it should be saved
+   - Only ask questions that are relevant to the specific request
+   - Wait for responses using wait_for_mentions after each question
+   - After gathering all details, summarize the requirements and ask for final confirmation
+   - Only proceed with presentation creation after receiving confirmation
+
+5. Once confirmed, use your PowerPoint tools to create comprehensive presentations with:
    - Clear structure and flow that is well organized and ordered
    - Informative tables showing comparisons or specifications when relevant
    - Relevant charts and diagrams to visualize data when asked for it
    - Professional shapes and design elements
    - Beautiful and consistent formatting
    - Everything properly organized and sequenced
-5. When creating presentations, save them in the directory provided by the user.
-6. Make sure presentations are both informative and visually appealing with professional design.
-7. Think about the content and see if you have executed the instruction to the best of your ability using the PowerPoint tools. Make this your response as "answer" including details about what was created.
-8. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer" and the directory where the presentation was saved.
-9. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error" with details about what went wrong.
-10. Always respond back to the sender agent even if you have no answer or error.
-11. Repeat the process from step 1.
+6. When creating presentations, save them in the directory provided by the user.
+7. Make sure presentations are both informative and visually appealing with professional design.
+8. Think about the content and see if you have executed the instruction to the best of your ability using the PowerPoint tools. Make this your response as "answer" including details about what was created.
+9. Use `send_message` from coral tools to send a message in the same thread ID to the sender Id you received the mention from, with content: "answer" and the directory where the presentation was saved.
+10. If any error occurs, use `send_message` to send a message in the same thread ID to the sender Id you received the mention from, with content: "error" with details about what went wrong.
+11. Always respond back to the sender agent even if you have no answer or error.
+12. Repeat the process from step 1.
 
 These are the coral tools available: {coral_tools}
 
@@ -129,6 +149,19 @@ When creating presentations, ensure they include:
 - Professional layouts and design
 - Proper structure with clear sections
 - Beautiful formatting and consistent styling
+- Text optimization for every slide:
+  * Appropriate font sizes that are readable but not oversized
+  * No overcrowding of text on any slide
+  * Use of bullet points and hierarchical structure when appropriate
+  * Text properly aligned with other elements on the slide
+- Make sure that text is well fitted in the slides without overflow or cramping
+- If you have added visuals like charts or graphs then do not include bullet points in it as it will be messy
+
+Remember:
+- Only ask for details that are not already provided in the initial request
+- Be context-aware when asking questions
+- Always get final confirmation before creating the presentation
+- Maintain professional communication throughout the process
 """
         
         # Initialize agent with both coral and PowerPoint tools
@@ -137,6 +170,31 @@ When creating presentations, ensure they include:
             system_prompt=system_prompt,
             mcp_servers=[coral_server, ppt_server]
         )
+
+        @agent.tool
+        def read_word_document(ctx: RunContext, file_path: str) -> str:
+            """
+            Read a Word document and return its content.
+            Args:
+                ctx: The run context for the tool
+                file_path: The full path to the Word document (.docx file)
+            Returns:
+                The text content of the Word document
+            """
+            try:
+                doc = Document(file_path)
+                content = []
+                for paragraph in doc.paragraphs:
+                    if paragraph.text.strip():
+                        content.append(paragraph.text.strip())
+                for table in doc.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            if cell.text.strip():
+                                content.append(cell.text.strip())
+                return "\n\n".join(content)
+            except Exception as e:
+                return f"Error reading document: {str(e)}"
 
         logger.info("Coral and PowerPoint MCP Server Connection Established")
         
@@ -153,7 +211,7 @@ When creating presentations, ensure they include:
                     
                     # Run the agent to wait for mentions and process them
                     result = await agent.run(
-                        "Call wait_for_mentions to wait for presentation creation instructions from other agents",
+                        "Call wait_for_mentions to wait for presentation creation instructions from other agents.When you are making the slides make sure that the text is well fitted in the slides and use proffesional gradients and colors in the slides",
                         message_history=message_history
                     )
                     
